@@ -3,6 +3,7 @@
 #pragma once
 
 #include <QString>
+#include <QPointF>
 
 #include "hantekdso/controlspecification.h"
 #include "hantekdso/enums.h"
@@ -12,12 +13,22 @@
 #define MARKER_COUNT 2 ///< Number of markers
 #define MARKER_STEP (DIVS_TIME / 100.0)
 
+/// \brief Holds the cursor parameters
+struct DsoSettingsScopeCursor {
+    enum CursorShape {
+        NONE,
+        HORIZONTAL,
+        VERTICAL,
+        RECTANGULAR
+    } shape = NONE;
+    QPointF position[MARKER_COUNT] = {{-1.0, -1.0}, {1.0, 1.0}};    ///< Position in div
+};
+
 /// \brief Holds the settings for the horizontal axis.
 struct DsoSettingsScopeHorizontal {
     Dso::GraphFormat format = Dso::GraphFormat::TY; ///< Graph drawing mode of the scope
     double frequencybase = 1e3;                     ///< Frequencybase in Hz/div
-    double marker[MARKER_COUNT] = {-1.0, 1.0};      ///< Marker positions in div
-    bool marker_visible[MARKER_COUNT] = {true, true};
+    DsoSettingsScopeCursor cursor;
 
     unsigned int recordLength = 0; ///< Sample count
 
@@ -46,6 +57,7 @@ struct DsoSettingsScopeSpectrum {
     QString name;            ///< Name of this channel
     double offset = 0.0;     ///< Vertical offset in divs
     bool used = false;       ///< true if the spectrum is turned on
+    DsoSettingsScopeCursor cursor;
 };
 
 /// \brief Holds the settings for the normal voltage graphs.
@@ -58,6 +70,7 @@ struct DsoSettingsScopeVoltage {
     QString name;                     ///< Name of this channel
     bool inverted = false;            ///< true if the channel is inverted (mirrored on cross-axis)
     bool used = false;                ///< true if this channel is enabled
+    DsoSettingsScopeCursor cursor;
 };
 
 /// \brief Holds the settings for the oscilloscope.
@@ -77,4 +90,11 @@ struct DsoSettingsScope {
     }
     // Channels, including math channels
     unsigned countChannels() const { return (unsigned)voltage.size(); }
+
+    double getMarker(unsigned int marker) const {
+        return marker < MARKER_COUNT ? horizontal.cursor.position[marker].x() : 0.0;
+    }
+    void setMarker(unsigned int marker, double value) {
+        if (marker < MARKER_COUNT) horizontal.cursor.position[marker].setX(value);
+    }
 };

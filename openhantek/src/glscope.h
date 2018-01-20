@@ -18,6 +18,7 @@
 
 struct DsoSettingsView;
 struct DsoSettingsScope;
+struct DsoSettingsScopeCursor;
 class PPresult;
 
 /// \brief OpenGL accelerated widget that displays the oscilloscope screen.
@@ -41,6 +42,7 @@ class GlScope : public QOpenGLWidget {
      */
     void showData(std::shared_ptr<PPresult> data);
     void markerUpdated();
+    void cursorSelected(unsigned index) { selectedCursor = index; markerUpdated(); }
 
   protected:
     /// \brief Initializes the scope widget.
@@ -70,11 +72,12 @@ class GlScope : public QOpenGLWidget {
     void drawGrid();
     /// Draw vertical lines at marker positions
     void drawMarkers();
+    void generateVertices(unsigned int marker, const DsoSettingsScopeCursor &cursor);
 
     void drawVoltageChannelGraph(ChannelID channel, Graph &graph, int historyIndex);
     void drawSpectrumChannelGraph(ChannelID channel, Graph &graph, int historyIndex);
   signals:
-    void markerMoved(unsigned marker, double position);
+    void markerMoved(unsigned marker);
 
   private:
     // User settings
@@ -85,15 +88,19 @@ class GlScope : public QOpenGLWidget {
     // Marker
     const unsigned NO_MARKER = UINT_MAX;
     #pragma pack(push, 1)
-    struct Line {
-        QVector3D x;
-        QVector3D y;
+    struct Vertices {
+        QVector3D a, b, c, d;
     };
     #pragma pack(pop)
-    std::vector<Line> vaMarker;
+    const unsigned VERTICES_ARRAY_SIZE = sizeof(Vertices) / sizeof(QVector3D);
+    std::vector<Vertices> vaMarker;
     unsigned selectedMarker = NO_MARKER;
     QOpenGLBuffer m_marker;
     QOpenGLVertexArrayObject m_vaoMarker;
+
+    // Cursors
+    std::vector<DsoSettingsScopeCursor *> cursorInfo;
+    unsigned selectedCursor = 0;
 
     // Grid
     QOpenGLBuffer m_grid;

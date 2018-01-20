@@ -54,41 +54,65 @@ void GlScope::fixOpenGLversion(QSurfaceFormat::RenderableType t) {
 
 GlScope::GlScope(DsoSettingsScope *scope, DsoSettingsView *view, QWidget *parent)
     : QOpenGLWidget(parent), scope(scope), view(view) {
-    vaMarker.resize(MARKER_COUNT);
+    cursorInfo.clear();
+    cursorInfo.push_back(&scope->horizontal.cursor);
+    selectedCursor = 0;
+    for (ChannelID channel = 0; channel < scope->voltage.size(); ++channel) {
+        cursorInfo.push_back(&scope->voltage[channel].cursor);
+    }
+    for (ChannelID channel = 0; channel < scope->spectrum.size(); ++channel) {
+        cursorInfo.push_back(&scope->spectrum[channel].cursor);
+    }
+    vaMarker.resize(cursorInfo.size());
 }
 
 GlScope::~GlScope() {/* virtual destructor necessary */}
 
 void GlScope::mousePressEvent(QMouseEvent *event) {
     if (!zoomed && event->button() == Qt::LeftButton) {
-        double position = (double)(event->x() - width() / 2) * DIVS_TIME / (double)width();
-        double distance = DIVS_TIME;
+        QPointF position((double)(event->x() - width() / 2) * DIVS_TIME / (double)width(),
+                         (double)(height() / 2 - event->y()) * DIVS_VOLTAGE / (double)height());
+        QPointF distance(DIVS_TIME, DIVS_VOLTAGE);
         selectedMarker = NO_MARKER;
+        DsoSettingsScopeCursor *cursor = cursorInfo[selectedCursor];
         // Capture nearest marker located within snap area (+/- 1% of full scale).
+        bool captureX =  cursor->shape == DsoSettingsScopeCursor::RECTANGULAR
+                      || cursor->shape == DsoSettingsScopeCursor::VERTICAL;
+        bool captureY =  cursor->shape == DsoSettingsScopeCursor::RECTANGULAR
+                      || cursor->shape == DsoSettingsScopeCursor::HORIZONTAL;
         for (unsigned marker = 0; marker < MARKER_COUNT; ++marker) {
-            if (!scope->horizontal.marker_visible[marker]) continue;
-            if (fabs(scope->horizontal.marker[marker] - position) < std::min(distance, DIVS_TIME / 100.0)) {
-                distance = fabs(scope->horizontal.marker[marker] - position);
+            if (captureX && fabs(cursor->position[marker].x() - position.x()) < std::min(distance.x(), DIVS_TIME / 100.0)) {
+                distance.setX(fabs(cursor->position[marker].x() - position.x()));
+                selectedMarker = marker;
+            }
+            if (captureY && fabs(cursor->position[marker].y() - position.y()) < std::min(distance.y(), DIVS_VOLTAGE / 100.0)) {
+                distance.setY(fabs(cursor->position[marker].y() - position.y()));
                 selectedMarker = marker;
             }
         }
-        if (selectedMarker != NO_MARKER) { emit markerMoved(selectedMarker, position); }
+        if (selectedMarker != NO_MARKER) {
+            cursorInfo[selectedCursor]->position[selectedMarker] = position;
+            if (selectedCursor == 0) emit markerMoved(selectedMarker);
+        }
     }
     event->accept();
 }
 
 void GlScope::mouseMoveEvent(QMouseEvent *event) {
     if (!zoomed && (event->buttons() & Qt::LeftButton) != 0) {
-        double position = (double)(event->x() - width() / 2) * DIVS_TIME / (double)width();
+        QPointF position((double)(event->x() - width() / 2) * DIVS_TIME / (double)width(),
+                         (double)(height() / 2 - event->y()) * DIVS_VOLTAGE / (double)height());
         if (selectedMarker == NO_MARKER) {
             // User started draging outside the snap area of any marker:
             // move all markers to current position and select last marker in the array.
             for (unsigned marker = 0; marker < MARKER_COUNT; ++marker) {
-                emit markerMoved(marker, position);
+                cursorInfo[selectedCursor]->position[marker] = position;
+                emit markerMoved(marker);
                 selectedMarker = marker;
             }
         } else if (selectedMarker < MARKER_COUNT) {
-            emit markerMoved(selectedMarker, position);
+            cursorInfo[selectedCursor]->position[selectedMarker] = position;
+            emit markerMoved(selectedMarker);
         }
     }
     event->accept();
@@ -96,8 +120,12 @@ void GlScope::mouseMoveEvent(QMouseEvent *event) {
 
 void GlScope::mouseReleaseEvent(QMouseEvent *event) {
     if (!zoomed && event->button() == Qt::LeftButton) {
-        double position = (double)(event->x() - width() / 2) * DIVS_TIME / (double)width();
-        if (selectedMarker < MARKER_COUNT) { emit markerMoved(selectedMarker, position); }
+        QPointF position((double)(event->x() - width() / 2) * DIVS_TIME / (double)width(),
+                         (double)(height() / 2 - event->y()) * DIVS_VOLTAGE / (double)height());
+        if (selectedMarker < MARKER_COUNT) {
+            cursorInfo[selectedCursor]->position[selectedMarker] = position;
+            emit markerMoved(selectedMarker);
+        }
         selectedMarker = NO_MARKER;
     }
     event->accept();
@@ -209,11 +237,10 @@ void GlScope::initializeGL() {
         m_marker.create();
         m_marker.bind();
         m_marker.setUsagePattern(QOpenGLBuffer::StaticDraw);
-        m_marker.allocate(int(vaMarker.size() * sizeof(Line)));
+        m_marker.allocate(int(vaMarker.size() * sizeof(Vertices)));
         program->enableAttributeArray(vertexLocation);
         program->setAttributeBuffer(vertexLocation, GL_FLOAT, 0, 3, 0);
     }
-
     markerUpdated();
 
     m_program = std::move(program);
@@ -239,18 +266,60 @@ void GlScope::showData(std::shared_ptr<PPresult> data) {
     update();
 }
 
+void GlScope::generateVertices(unsigned int marker, const DsoSettingsScopeCursor &cursor) {
+    switch (cursor.shape) {
+    case DsoSettingsScopeCursor::NONE:
+        vaMarker[marker] = {
+            QVector3D(-DIVS_TIME, -DIVS_VOLTAGE, 1.0f),
+            QVector3D(-DIVS_TIME,  DIVS_VOLTAGE, 1.0f),
+            QVector3D( DIVS_TIME,  DIVS_VOLTAGE, 1.0f),
+            QVector3D( DIVS_TIME, -DIVS_VOLTAGE, 1.0f)
+        };
+        break;
+    case DsoSettingsScopeCursor::VERTICAL:
+        vaMarker[marker] = {
+            QVector3D(cursor.position[0].x(), -DIVS_VOLTAGE, 1.0f),
+            QVector3D(cursor.position[0].x(),  DIVS_VOLTAGE, 1.0f),
+            QVector3D(cursor.position[1].x(),  DIVS_VOLTAGE, 1.0f),
+            QVector3D(cursor.position[1].x(), -DIVS_VOLTAGE, 1.0f)
+        };
+        break;
+    case DsoSettingsScopeCursor::HORIZONTAL:
+        vaMarker[marker] = {
+            QVector3D(-DIVS_TIME, cursor.position[0].y(), 1.0f),
+            QVector3D( DIVS_TIME, cursor.position[0].y(), 1.0f),
+            QVector3D( DIVS_TIME, cursor.position[1].y(), 1.0f),
+            QVector3D(-DIVS_TIME, cursor.position[1].y(), 1.0f)
+        };
+        break;
+    case DsoSettingsScopeCursor::RECTANGULAR:
+        vaMarker[marker] = {
+            QVector3D(cursor.position[0].x(), cursor.position[0].y(), 1.0f),
+            QVector3D(cursor.position[0].x(), cursor.position[1].y(), 1.0f),
+            QVector3D(cursor.position[1].x(), cursor.position[1].y(), 1.0f),
+            QVector3D(cursor.position[1].x(), cursor.position[0].y(), 1.0f)
+        };
+        break;
+    default:
+        break;
+    }
+}
+
 void GlScope::markerUpdated() {
 
-    for (unsigned marker = 0; marker < vaMarker.size(); ++marker) {
-        if (!scope->horizontal.marker_visible[marker]) continue;
-        vaMarker[marker] = {QVector3D((GLfloat)scope->horizontal.marker[marker], -DIVS_VOLTAGE, 0.0f),
-                            QVector3D((GLfloat)scope->horizontal.marker[marker], DIVS_VOLTAGE, 0.0f)};
+    unsigned int marker = 0;
+    generateVertices(marker++, scope->horizontal.cursor);
+    for (ChannelID channel = 0; channel < scope->voltage.size(); ++channel) {
+        generateVertices(marker++, scope->voltage[channel].cursor);
+    }
+    for (ChannelID channel = 0; channel < scope->spectrum.size(); ++channel) {
+        generateVertices(marker++, scope->spectrum[channel].cursor);
     }
 
     // Write coordinates to GPU
     makeCurrent();
     m_marker.bind();
-    m_marker.write(0, vaMarker.data(), vaMarker.size() * sizeof(Line));
+    m_marker.write(0, vaMarker.data(), vaMarker.size() * sizeof(Vertices));
 }
 
 void GlScope::paintGL() {
@@ -268,9 +337,8 @@ void GlScope::paintGL() {
     // Apply zoom settings via matrix transformation
     if (zoomed) {
         QMatrix4x4 m;
-        m.scale(QVector3D(DIVS_TIME / (GLfloat)fabs(scope->horizontal.marker[1] - scope->horizontal.marker[0]), 1.0f,
-                          1.0f));
-        m.translate((GLfloat) - (scope->horizontal.marker[0] + scope->horizontal.marker[1]) / 2, 0.0f, 0.0f);
+        m.scale(QVector3D(DIVS_TIME / (GLfloat)fabs(scope->getMarker(1) - scope->getMarker(0)), 1.0f, 1.0f));
+        m.translate((GLfloat) - (scope->getMarker(0) + scope->getMarker(1)) / 2, 0.0f, 0.0f);
         m_program->setUniformValue(matrixLocation, pmvMatrix * m);
     }
 
@@ -434,19 +502,31 @@ void GlScope::drawGrid() {
 
 void GlScope::drawMarkers() {
     auto *gl = context()->functions();
-    QColor trColor = view->screen.markers;
-    m_program->setUniformValue(colorLocation, trColor);
 
     m_vaoMarker.bind();
+    unsigned int marker = 0;
 
-    // Draw all
-    gl->glLineWidth(1);
-    gl->glDrawArrays(GL_LINES, 0, (GLsizei)vaMarker.size() * 2);
+    m_program->setUniformValue(colorLocation, view->screen.markers);
+    gl->glLineWidth((marker == selectedCursor) ? 3 : 1);
+    gl->glDrawArrays(GL_LINE_LOOP, 0, VERTICES_ARRAY_SIZE);
+    ++marker;
 
-    // Draw selected
-    if (selectedMarker != NO_MARKER) {
-        gl->glLineWidth(3);
-        gl->glDrawArrays(GL_LINES, selectedMarker * 2, (GLsizei)2);
+    for (ChannelID channel = 0; channel < scope->voltage.size(); ++channel, ++marker) {
+        if (scope->voltage[channel].used) {
+            QColor color = view->screen.voltage[channel];
+            m_program->setUniformValue(colorLocation, color);
+            gl->glLineWidth((marker == selectedCursor) ? 3 : 1);
+            gl->glDrawArrays(GL_LINE_LOOP, GLint(marker * VERTICES_ARRAY_SIZE), VERTICES_ARRAY_SIZE);
+        }
+    }
+
+    for (ChannelID channel = 0; channel < scope->spectrum.size(); ++channel, ++marker) {
+        if (scope->spectrum[channel].used) {
+            QColor color = view->screen.spectrum[channel];
+            m_program->setUniformValue(colorLocation, color);
+            gl->glLineWidth((marker == selectedCursor) ? 3 : 1);
+            gl->glDrawArrays(GL_LINE_LOOP, GLint(marker * VERTICES_ARRAY_SIZE), VERTICES_ARRAY_SIZE);
+        }
     }
 
     m_vaoMarker.release();

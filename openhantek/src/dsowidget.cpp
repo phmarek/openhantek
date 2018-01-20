@@ -5,6 +5,9 @@
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QLabel>
+#include <QGroupBox>
+#include <QPushButton>
+#include <QButtonGroup>
 #include <QSignalBlocker>
 #include <QTimer>
 
@@ -24,6 +27,52 @@
 
 static int zoomScopeRow = 0;
 
+DsoWidget::CursorInfo::CursorInfo() {
+    selector = new QPushButton();
+    selector->setCheckable(true);
+    shape = new QPushButton();
+    deltaXLabel = new QLabel();
+    deltaXLabel->setAlignment(Qt::AlignRight);
+    deltaYLabel = new QLabel();
+    deltaYLabel->setAlignment(Qt::AlignRight);
+}
+
+void DsoWidget::CursorInfo::configure(const QString &text, const QColor &bgColor, const QColor &fgColor) {
+    selector->setText(text);
+    selector->setStyleSheet(QString(R"(
+        QPushButton {
+            color: %2;
+            background-color: %1;
+            border: 1px solid %2;
+        }
+        QPushButton:checked {
+            color: %1;
+            background-color: %2;
+        }
+        QPushButton:disabled {
+            color: %3;
+            border: 1px dotted %2;
+        }
+    )").arg(bgColor.name(QColor::HexArgb))
+       .arg(fgColor.name(QColor::HexArgb))
+       .arg(fgColor.darker().name(QColor::HexArgb)));
+
+    shape->setStyleSheet(QString(R"(
+        QPushButton {
+            color: %2;
+            background-color: %1;
+            border: none
+        }
+    )").arg(bgColor.name(QColor::HexArgb))
+       .arg(fgColor.name(QColor::HexArgb)));
+
+    QPalette palette;
+    palette.setColor(QPalette::Background, bgColor);
+    palette.setColor(QPalette::WindowText, fgColor);
+    deltaXLabel->setPalette(palette);
+    deltaYLabel->setPalette(palette);
+}
+
 DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::ControlSpecification *spec,
                      QWidget *parent, Qt::WindowFlags flags)
     : QWidget(parent, flags), scope(scope), view(view), spec(spec), mainScope(GlScope::createNormal(scope, view)),
@@ -37,12 +86,9 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
     setupSliders(mainSliders);
     setupSliders(zoomSliders);
 
-    connect(mainScope, &GlScope::markerMoved, [this](int marker, double position) {
-        double value = std::round(position / MARKER_STEP) * MARKER_STEP;
-
-        this->scope->horizontal.marker[marker] = value;
-        this->mainSliders.markerSlider->setValue(marker, value);
-        this->mainScope->markerUpdated();
+    connect(mainScope, &GlScope::markerMoved, [this](unsigned marker) {
+        mainSliders.markerSlider->setValue(marker, this->scope->horizontal.cursor.position[marker].x());
+        mainScope->markerUpdated();
     });
 
     // The table for the settings
@@ -141,6 +187,91 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
         updateSpectrumDetails((unsigned)channel);
     }
 
+    // Cursors
+    cursorsLayout = new QGridLayout();
+    cursorsLayout->setSpacing(5);
+    QButtonGroup *cursorSelectorButtonGroup = new QButtonGroup();
+    cursorSelectorButtonGroup->setExclusive(true);
+    {
+        int row = 0;
+        markerInfo.configure(tr("Markers"), view->screen.background, view->screen.text);
+        markerInfo.index = row;
+        cursorSelectorButtonGroup->addButton(markerInfo.selector, markerInfo.index);
+        markerInfo.selector->setChecked(true);
+
+        cursorsLayout->addWidget(markerInfo.selector, 3 * row, 0);
+        cursorsLayout->addWidget(markerInfo.shape, 3 * row, 1);
+        cursorsLayout->addWidget(markerInfo.deltaXLabel, 3 * row + 1, 0);
+        cursorsLayout->addWidget(markerInfo.deltaYLabel, 3 * row + 1, 1);
+        cursorsLayout->setRowMinimumHeight(3 * row + 2, 10);
+        ++row;
+        voltageCursors.resize(scope->voltage.size());
+        for (ChannelID channel = 0; channel < scope->voltage.size(); ++channel) {
+            tablePalette.setColor(QPalette::WindowText, view->screen.voltage[channel]);
+            CursorInfo &info = voltageCursors[channel];
+
+            info.index = row;
+            info.configure(scope->voltage[channel].name, view->screen.background,
+                           view->screen.voltage[channel]);
+            cursorSelectorButtonGroup->addButton(info.selector, info.index);
+
+            cursorsLayout->addWidget(info.selector, 3 * row, 0);
+            cursorsLayout->addWidget(info.shape, 3 * row, 1);
+            connect(info.shape, &QPushButton::clicked, [this, scope, channel] () {
+                if (scope->voltage[channel].used) {
+                    unsigned shape = (unsigned)scope->voltage[channel].cursor.shape;
+                    if (shape == DsoSettingsScopeCursor::NONE) {
+                        scope->voltage[channel].cursor.shape = DsoSettingsScopeCursor::RECTANGULAR;
+                    } else {
+                        scope->voltage[channel].cursor.shape = DsoSettingsScopeCursor::NONE;
+                    }
+                }
+                updateMarkerDetails();
+                mainScope->markerUpdated();
+            });
+            cursorsLayout->addWidget(info.deltaXLabel, 3 * row + 1, 0);
+            cursorsLayout->addWidget(info.deltaYLabel, 3 * row + 1, 1);
+            cursorsLayout->setRowMinimumHeight(3 * row + 2, 10);
+            ++row;
+        }
+        spectrumCursors.resize(scope->spectrum.size());
+        for (ChannelID channel = 0; channel < scope->spectrum.size(); ++channel) {
+            tablePalette.setColor(QPalette::WindowText, view->screen.spectrum[channel]);
+            CursorInfo &info = spectrumCursors[channel];
+
+            info.index = row;
+            info.configure(scope->spectrum[channel].name, view->screen.background,
+                           view->screen.spectrum[channel]);
+            cursorSelectorButtonGroup->addButton(info.selector, info.index);
+
+            cursorsLayout->addWidget(info.selector, 3 * row, 0);
+            cursorsLayout->addWidget(info.shape, 3 * row, 1);
+            connect(info.shape, &QPushButton::clicked, [this, scope, channel] () {
+                if (scope->spectrum[channel].used) {
+                    unsigned shape = (unsigned)scope->spectrum[channel].cursor.shape;
+                    if (shape == DsoSettingsScopeCursor::NONE) {
+                        scope->spectrum[channel].cursor.shape = DsoSettingsScopeCursor::RECTANGULAR;
+                    } else {
+                        scope->spectrum[channel].cursor.shape = DsoSettingsScopeCursor::NONE;
+                    }
+                }
+                updateMarkerDetails();
+                mainScope->markerUpdated();
+            });
+            cursorsLayout->addWidget(info.deltaXLabel, 3 * row + 1, 0);
+            cursorsLayout->addWidget(info.deltaYLabel, 3 * row + 1, 1);
+            cursorsLayout->setRowMinimumHeight(3 * row + 2, 10);
+            ++row;
+        }
+        cursorsLayout->setRowStretch(3 * row, 1);
+
+        connect(cursorSelectorButtonGroup, QOverload<int>::of(&QButtonGroup::buttonPressed), [this](int index) {
+            mainScope->cursorSelected(index);
+        });
+
+        scope->horizontal.cursor.shape = DsoSettingsScopeCursor::VERTICAL;
+    }
+
     // The layout for the widgets
     mainLayout = new QGridLayout();
     mainLayout->setColumnStretch(2, 1); // Scopes increase their size
@@ -176,6 +307,11 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
     mainLayout->setRowMinimumHeight(row++, 8);
     mainLayout->addLayout(measurementLayout, row++, 0, 1, 5);
 
+    QGroupBox *cursorsGroupBox = new QGroupBox();
+    cursorsGroupBox->setLayout(cursorsLayout);
+    cursorsGroupBox->setFixedWidth(180);
+    mainLayout->addWidget(cursorsGroupBox, 0, 5, row, 1);
+
     // The widget itself
     setPalette(palette);
     setBackgroundRole(QPalette::Background);
@@ -186,16 +322,19 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
     connect(mainSliders.offsetSlider, &LevelSlider::valueChanged, this, &DsoWidget::updateOffset);
     connect(zoomSliders.offsetSlider, &LevelSlider::valueChanged, this, &DsoWidget::updateOffset);
 
-    connect(mainSliders.triggerPositionSlider, &LevelSlider::valueChanged, this, &DsoWidget::updateTriggerPosition);
-    zoomSliders.triggerPositionSlider->setEnabled(false);
+    connect(mainSliders.triggerPositionSlider, &LevelSlider::valueChanged, [this](int index, double value) {
+        updateTriggerPosition(index, value, true);
+    });
+    connect(zoomSliders.triggerPositionSlider, &LevelSlider::valueChanged, [this](int index, double value) {
+        updateTriggerPosition(index, value, false);
+    });
 
     connect(mainSliders.triggerLevelSlider, &LevelSlider::valueChanged, this, &DsoWidget::updateTriggerLevel);
     connect(zoomSliders.triggerLevelSlider, &LevelSlider::valueChanged, this, &DsoWidget::updateTriggerLevel);
 
     connect(mainSliders.markerSlider, &LevelSlider::valueChanged, [this](int index, double value) {
         updateMarker(index, value);
-        mainScope->update();
-        zoomScope->update();
+        mainScope->markerUpdated();
     });
     zoomSliders.markerSlider->setEnabled(false);
 }
@@ -247,7 +386,7 @@ void DsoWidget::setupSliders(DsoWidget::Sliders &sliders) {
         sliders.markerSlider->addSlider(QString::number(marker + 1), marker);
         sliders.markerSlider->setLimits(marker, -DIVS_TIME / 2, DIVS_TIME / 2);
         sliders.markerSlider->setStep(marker, MARKER_STEP);
-        sliders.markerSlider->setValue(marker, scope->horizontal.marker[marker]);
+        sliders.markerSlider->setValue(marker, scope->horizontal.cursor.position[marker].x());
         sliders.markerSlider->setIndexVisible(marker, true);
     }
 }
@@ -283,10 +422,45 @@ void DsoWidget::setMeasurementVisible(ChannelID channel) {
     if (!scope->spectrum[channel].used) { measurementMagnitudeLabel[channel]->setText(QString()); }
 }
 
+void hideCursorInfo(DsoWidget::CursorInfo& info) {
+    info.shape->setText(QString());
+    info.deltaXLabel->setText(QString());
+    info.deltaYLabel->setText(QString());
+}
+
+void updateCursorInfo(DsoWidget::CursorInfo &info, const QString &strX, const QString &strY,
+                             const DsoSettingsScopeCursor::CursorShape &shape) {
+    switch (shape) {
+    case DsoSettingsScopeCursor::NONE:
+        info.shape->setText(DsoWidget::tr("OFF"));
+        info.deltaXLabel->setText(QString());
+        info.deltaYLabel->setText(QString());
+        break;
+    case DsoSettingsScopeCursor::HORIZONTAL:
+        info.shape->setText(DsoWidget::tr("="));
+        info.deltaXLabel->setText(QString());
+        info.deltaYLabel->setText(strY);
+        break;
+    case DsoSettingsScopeCursor::VERTICAL:
+        info.shape->setText(DsoWidget::tr("||"));
+        info.deltaXLabel->setText(strX);
+        info.deltaYLabel->setText(QString());
+        break;
+    case DsoSettingsScopeCursor::RECTANGULAR:
+        info.shape->setText(DsoWidget::tr("#"));
+        info.deltaXLabel->setText(strX);
+        info.deltaYLabel->setText(strY);
+        break;
+    default:
+        break;
+    }
+}
+
 /// \brief Update the label about the marker measurements
 void DsoWidget::updateMarkerDetails() {
-    double divs = fabs(scope->horizontal.marker[1] - scope->horizontal.marker[0]);
+    double divs = fabs(scope->horizontal.cursor.position[1].x() - scope->horizontal.cursor.position[0].x());
     double time = divs * scope->horizontal.timebase;
+    double freq = divs * scope->horizontal.frequencybase;
 
     QString infoLabelPrefix(tr("Markers"));
     if (view->zoom) {
@@ -295,15 +469,47 @@ void DsoWidget::updateMarkerDetails() {
         markerFrequencybaseLabel->setText(
             valueToString(divs * scope->horizontal.frequencybase / DIVS_TIME, UNIT_HERTZ, 4) + tr("/div"));
     }
+    QPointF p0 = scope->horizontal.cursor.position[0];
+    QPointF p1 = scope->horizontal.cursor.position[1];
     markerInfoLabel->setText(
         infoLabelPrefix.append(":  %1  %2")
-            .arg(
-                valueToString(0.5 + scope->horizontal.marker[0] / DIVS_TIME - scope->trigger.position, UNIT_SECONDS, 4))
-            .arg(valueToString(0.5 + scope->horizontal.marker[1] / DIVS_TIME - scope->trigger.position, UNIT_SECONDS,
-                               4)));
+            .arg(valueToString(0.5 + p0.x() / DIVS_TIME - scope->trigger.position, UNIT_SECONDS, 4))
+            .arg(valueToString(0.5 + p1.x() / DIVS_TIME - scope->trigger.position, UNIT_SECONDS, 4)));
 
     markerTimeLabel->setText(valueToString(time, UNIT_SECONDS, 4));
     markerFrequencyLabel->setText(valueToString(1.0 / time, UNIT_HERTZ, 4));
+
+    markerInfo.deltaXLabel->setText(valueToString(time, UNIT_SECONDS, 4));
+    markerInfo.deltaYLabel->setText(valueToString(freq, UNIT_HERTZ, 4));
+
+    for (ChannelID channel = 0; channel < scope->voltage.size(); ++channel) {
+        if (scope->voltage[channel].used) {
+            voltageCursors[channel].selector->setEnabled(true);
+            QPointF p0 = scope->voltage[channel].cursor.position[0];
+            QPointF p1 = scope->voltage[channel].cursor.position[1];
+            updateCursorInfo(voltageCursors[channel],
+                valueToString((p1.x() - p0.x()) * scope->horizontal.timebase, UNIT_SECONDS, 4),
+                valueToString((p1.y() - p0.y()) * scope->gain(channel), UNIT_VOLTS, 4),
+                scope->voltage[channel].cursor.shape);
+        } else {
+            voltageCursors[channel].selector->setEnabled(false);
+            hideCursorInfo(voltageCursors[channel]);
+        }
+    }
+    for (ChannelID channel = 0; channel < scope->spectrum.size(); ++channel) {
+        if (scope->spectrum[channel].used) {
+            spectrumCursors[channel].selector->setEnabled(true);
+            QPointF p0 = scope->spectrum[channel].cursor.position[0];
+            QPointF p1 = scope->spectrum[channel].cursor.position[1];
+            updateCursorInfo(spectrumCursors[channel],
+                valueToString((p1.x() - p0.x()) * scope->horizontal.frequencybase, UNIT_HERTZ, 4),
+                valueToString((p1.y() - p0.y()) * scope->spectrum[channel].magnitude * DIVS_VOLTAGE, UNIT_DECIBEL, 4),
+                scope->spectrum[channel].cursor.shape);
+        } else {
+            spectrumCursors[channel].selector->setEnabled(false);
+            hideCursorInfo(spectrumCursors[channel]);
+        }
+    }
 }
 
 /// \brief Update the label about the trigger settings
@@ -449,6 +655,7 @@ void DsoWidget::updateVoltageUsed(ChannelID channel, bool used) {
 
     setMeasurementVisible(channel);
     updateVoltageDetails(channel);
+    updateMarkerDetails();
 }
 
 /// \brief Change the record length.
@@ -538,11 +745,11 @@ void DsoWidget::updateOffset(ChannelID channel, double value) {
 
     if (channel < scope->voltage.size() * 2) {
         if (mainSliders.offsetSlider->value(channel) != value) {
-            QSignalBlocker blocker(mainSliders.offsetSlider);
+            const QSignalBlocker blocker(mainSliders.offsetSlider);
             mainSliders.offsetSlider->setValue(channel, value);
         }
         if (zoomSliders.offsetSlider->value(channel) != value) {
-            QSignalBlocker blocker(zoomSliders.offsetSlider);
+            const QSignalBlocker blocker(zoomSliders.offsetSlider);
             zoomSliders.offsetSlider->setValue(channel, value);
         }
     }
@@ -550,18 +757,38 @@ void DsoWidget::updateOffset(ChannelID channel, double value) {
     emit offsetChanged(channel, value);
 }
 
+/// \brief Translate horizontal position (0..1) from main view to zoom view.
+double DsoWidget::mainToZoom(double position) const {
+    double m1 = scope->getMarker(0);
+    double m2 = scope->getMarker(1);
+    if (m1 > m2) std::swap(m1, m2);
+    return ((position - 0.5) * DIVS_TIME - m1) / (m2 - m1);
+}
+
+/// \brief Translate horizontal position (0..1) from zoom view to main view.
+double DsoWidget::zoomToMain(double position) const {
+    double m1 = scope->getMarker(0);
+    double m2 = scope->getMarker(1);
+    if (m1 > m2) std::swap(m1, m2);
+    return 0.5 + (m1 + position * (m2 - m1)) / DIVS_TIME;
+}
+
 /// \brief Handles signals affecting trigger position in the zoom view.
 void DsoWidget::adaptTriggerPositionSlider() {
-    double m1 = scope->horizontal.marker[0];
-    double m2 = scope->horizontal.marker[1];
+    double value = mainToZoom(scope->trigger.position);
 
-    if (m1 > m2) std::swap(m1, m2);
-    double value = (scope->trigger.position - 0.5) * DIVS_TIME;
-    if (m1 != m2 && m1 <= value && value <= m2) {
-        zoomSliders.triggerPositionSlider->setIndexVisible(0, true);
-        zoomSliders.triggerPositionSlider->setValue(0, (value - m1) / (m2 - m1));
+    LevelSlider &slider = *zoomSliders.triggerPositionSlider;
+    const QSignalBlocker blocker(slider);
+    if (slider.minimum(0) <= value && value <= slider.maximum(0)) {
+        slider.setEnabled(true);
+        slider.setValue(0, value);
     } else {
-        zoomSliders.triggerPositionSlider->setIndexVisible(0, false);
+        slider.setEnabled(false);
+        if (value < slider.minimum(0)) {
+            slider.setValue(0, slider.minimum(0));
+        } else {
+            slider.setValue(0, slider.maximum(0));
+        }
     }
 }
 
@@ -569,16 +796,22 @@ void DsoWidget::adaptTriggerPositionSlider() {
 /// \param index The index of the slider.
 /// \param value The new triggerPosition in seconds relative to the first
 /// sample.
-void DsoWidget::updateTriggerPosition(int index, double value) {
+void DsoWidget::updateTriggerPosition(int index, double value, bool mainView) {
     if (index != 0) return;
 
-    scope->trigger.position = value;
-    adaptTriggerPositionSlider();
+    if (mainView) {
+        scope->trigger.position = value;
+        adaptTriggerPositionSlider();
+    } else {
+        scope->trigger.position = zoomToMain(value);
+        const QSignalBlocker blocker(mainSliders.triggerPositionSlider);
+        mainSliders.triggerPositionSlider->setValue(index, scope->trigger.position);
+    }
 
     updateTriggerDetails();
     updateMarkerDetails();
 
-    emit triggerPositionChanged(value * scope->horizontal.timebase * DIVS_TIME);
+    emit triggerPositionChanged(scope->trigger.position * scope->horizontal.timebase * DIVS_TIME);
 }
 
 /// \brief Handles valueChanged signal from the trigger level slider.
@@ -588,11 +821,11 @@ void DsoWidget::updateTriggerLevel(ChannelID channel, double value) {
     scope->voltage[channel].trigger = value;
 
     if (mainSliders.triggerLevelSlider->value(channel) != value) {
-        QSignalBlocker blocker(mainSliders.triggerLevelSlider);
+        const QSignalBlocker blocker(mainSliders.triggerLevelSlider);
         mainSliders.triggerLevelSlider->setValue(channel, value);
     }
     if (zoomSliders.triggerLevelSlider->value(channel) != value) {
-        QSignalBlocker blocker(zoomSliders.triggerLevelSlider);
+        const QSignalBlocker blocker(zoomSliders.triggerLevelSlider);
         zoomSliders.triggerLevelSlider->setValue(channel, value);
     }
 
@@ -605,10 +838,7 @@ void DsoWidget::updateTriggerLevel(ChannelID channel, double value) {
 /// \param marker The index of the slider.
 /// \param value The new marker position.
 void DsoWidget::updateMarker(int marker, double value) {
-    scope->horizontal.marker[marker] = value;
-
+    scope->setMarker(marker, value);
     adaptTriggerPositionSlider();
     updateMarkerDetails();
-
-    emit markerChanged(marker, value);
 }
