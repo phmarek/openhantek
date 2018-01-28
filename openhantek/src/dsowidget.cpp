@@ -265,7 +265,7 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
         }
         cursorsLayout->setRowStretch(3 * row, 1);
 
-        connect(cursorSelectorButtonGroup, QOverload<int>::of(&QButtonGroup::buttonPressed), [this](int index) {
+        connect(cursorSelectorButtonGroup, static_cast<void(QButtonGroup::*)(int)>(&QButtonGroup::buttonPressed), [this](int index) {
             mainScope->cursorSelected(index);
         });
 
