@@ -73,6 +73,7 @@ class GlScope : public QOpenGLWidget {
     /// Draw vertical lines at marker positions
     void drawMarkers();
     void generateVertices(unsigned int marker, const DsoSettingsScopeCursor &cursor);
+    void drawVertices(QOpenGLFunctions *gl, unsigned int marker, QColor color);
 
     void drawVoltageChannelGraph(ChannelID channel, Graph &graph, int historyIndex);
     void drawSpectrumChannelGraph(ChannelID channel, Graph &graph, int historyIndex);

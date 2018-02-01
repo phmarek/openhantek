@@ -87,7 +87,7 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
     setupSliders(zoomSliders);
 
     connect(mainScope, &GlScope::markerMoved, [this](unsigned marker) {
-        mainSliders.markerSlider->setValue(marker, this->scope->horizontal.cursor.position[marker].x());
+        mainSliders.markerSlider->setValue(marker, this->scope->horizontal.cursor.pos[marker].x());
         mainScope->markerUpdated();
     });
 
@@ -190,13 +190,13 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
     // Cursors
     cursorsLayout = new QGridLayout();
     cursorsLayout->setSpacing(5);
-    QButtonGroup *cursorSelectorButtonGroup = new QButtonGroup();
-    cursorSelectorButtonGroup->setExclusive(true);
+    QButtonGroup *cursorsGroup = new QButtonGroup();
+    cursorsGroup->setExclusive(true);
     {
         int row = 0;
         markerInfo.configure(tr("Markers"), view->screen.background, view->screen.text);
         markerInfo.index = row;
-        cursorSelectorButtonGroup->addButton(markerInfo.selector, markerInfo.index);
+        cursorsGroup->addButton(markerInfo.selector, markerInfo.index);
         markerInfo.selector->setChecked(true);
 
         cursorsLayout->addWidget(markerInfo.selector, 3 * row, 0);
@@ -213,7 +213,7 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
             info.index = row;
             info.configure(scope->voltage[channel].name, view->screen.background,
                            view->screen.voltage[channel]);
-            cursorSelectorButtonGroup->addButton(info.selector, info.index);
+            cursorsGroup->addButton(info.selector, info.index);
 
             cursorsLayout->addWidget(info.selector, 3 * row, 0);
             cursorsLayout->addWidget(info.shape, 3 * row, 1);
@@ -242,7 +242,7 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
             info.index = row;
             info.configure(scope->spectrum[channel].name, view->screen.background,
                            view->screen.spectrum[channel]);
-            cursorSelectorButtonGroup->addButton(info.selector, info.index);
+            cursorsGroup->addButton(info.selector, info.index);
 
             cursorsLayout->addWidget(info.selector, 3 * row, 0);
             cursorsLayout->addWidget(info.shape, 3 * row, 1);
@@ -265,7 +265,8 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
         }
         cursorsLayout->setRowStretch(3 * row, 1);
 
-        connect(cursorSelectorButtonGroup, static_cast<void(QButtonGroup::*)(int)>(&QButtonGroup::buttonPressed), [this](int index) {
+        connect(cursorsGroup,
+                static_cast<void(QButtonGroup::*)(int)>(&QButtonGroup::buttonPressed), [this, cursorsGroup] (int index) {
             mainScope->cursorSelected(index);
         });
 
@@ -386,7 +387,7 @@ void DsoWidget::setupSliders(DsoWidget::Sliders &sliders) {
         sliders.markerSlider->addSlider(QString::number(marker + 1), marker);
         sliders.markerSlider->setLimits(marker, -DIVS_TIME / 2, DIVS_TIME / 2);
         sliders.markerSlider->setStep(marker, MARKER_STEP);
-        sliders.markerSlider->setValue(marker, scope->horizontal.cursor.position[marker].x());
+        sliders.markerSlider->setValue(marker, scope->horizontal.cursor.pos[marker].x());
         sliders.markerSlider->setIndexVisible(marker, true);
     }
 }
@@ -447,7 +448,7 @@ void updateCursorInfo(DsoWidget::CursorInfo &info, const QString &strX, const QS
         info.deltaYLabel->setText(QString());
         break;
     case DsoSettingsScopeCursor::RECTANGULAR:
-        info.shape->setText(DsoWidget::tr("#"));
+        info.shape->setText(DsoWidget::tr("ON"));
         info.deltaXLabel->setText(strX);
         info.deltaYLabel->setText(strY);
         break;
@@ -458,7 +459,7 @@ void updateCursorInfo(DsoWidget::CursorInfo &info, const QString &strX, const QS
 
 /// \brief Update the label about the marker measurements
 void DsoWidget::updateMarkerDetails() {
-    double divs = fabs(scope->horizontal.cursor.position[1].x() - scope->horizontal.cursor.position[0].x());
+    double divs = fabs(scope->horizontal.cursor.pos[1].x() - scope->horizontal.cursor.pos[0].x());
     double time = divs * scope->horizontal.timebase;
     double freq = divs * scope->horizontal.frequencybase;
 
@@ -469,8 +470,8 @@ void DsoWidget::updateMarkerDetails() {
         markerFrequencybaseLabel->setText(
             valueToString(divs * scope->horizontal.frequencybase / DIVS_TIME, UNIT_HERTZ, 4) + tr("/div"));
     }
-    QPointF p0 = scope->horizontal.cursor.position[0];
-    QPointF p1 = scope->horizontal.cursor.position[1];
+    QPointF p0 = scope->horizontal.cursor.pos[0];
+    QPointF p1 = scope->horizontal.cursor.pos[1];
     markerInfoLabel->setText(
         infoLabelPrefix.append(":  %1  %2")
             .arg(valueToString(0.5 + p0.x() / DIVS_TIME - scope->trigger.position, UNIT_SECONDS, 4))
@@ -485,11 +486,11 @@ void DsoWidget::updateMarkerDetails() {
     for (ChannelID channel = 0; channel < scope->voltage.size(); ++channel) {
         if (scope->voltage[channel].used) {
             voltageCursors[channel].selector->setEnabled(true);
-            QPointF p0 = scope->voltage[channel].cursor.position[0];
-            QPointF p1 = scope->voltage[channel].cursor.position[1];
+            QPointF p0 = scope->voltage[channel].cursor.pos[0];
+            QPointF p1 = scope->voltage[channel].cursor.pos[1];
             updateCursorInfo(voltageCursors[channel],
-                valueToString((p1.x() - p0.x()) * scope->horizontal.timebase, UNIT_SECONDS, 4),
-                valueToString((p1.y() - p0.y()) * scope->gain(channel), UNIT_VOLTS, 4),
+                valueToString(fabs(p1.x() - p0.x()) * scope->horizontal.timebase, UNIT_SECONDS, 4),
+                valueToString(fabs(p1.y() - p0.y()) * scope->gain(channel), UNIT_VOLTS, 4),
                 scope->voltage[channel].cursor.shape);
         } else {
             voltageCursors[channel].selector->setEnabled(false);
@@ -499,11 +500,11 @@ void DsoWidget::updateMarkerDetails() {
     for (ChannelID channel = 0; channel < scope->spectrum.size(); ++channel) {
         if (scope->spectrum[channel].used) {
             spectrumCursors[channel].selector->setEnabled(true);
-            QPointF p0 = scope->spectrum[channel].cursor.position[0];
-            QPointF p1 = scope->spectrum[channel].cursor.position[1];
+            QPointF p0 = scope->spectrum[channel].cursor.pos[0];
+            QPointF p1 = scope->spectrum[channel].cursor.pos[1];
             updateCursorInfo(spectrumCursors[channel],
-                valueToString((p1.x() - p0.x()) * scope->horizontal.frequencybase, UNIT_HERTZ, 4),
-                valueToString((p1.y() - p0.y()) * scope->spectrum[channel].magnitude * DIVS_VOLTAGE, UNIT_DECIBEL, 4),
+                valueToString(fabs(p1.x() - p0.x()) * scope->horizontal.frequencybase, UNIT_HERTZ, 4),
+                valueToString(fabs(p1.y() - p0.y()) * scope->spectrum[channel].magnitude, UNIT_DECIBEL, 4),
                 scope->spectrum[channel].cursor.shape);
         } else {
             spectrumCursors[channel].selector->setEnabled(false);

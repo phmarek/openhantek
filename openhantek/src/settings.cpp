@@ -106,9 +106,9 @@ void DsoSettings::load() {
         for (int marker = 0; marker < MARKER_COUNT; ++marker) {
             QString name;
             name = QString("x%1").arg(marker);
-            if (store->contains(name)) scope.spectrum[channel].cursor.position[marker].setX(store->value(name).toDouble());
+            if (store->contains(name)) scope.spectrum[channel].cursor.pos[marker].setX(store->value(name).toDouble());
             name = QString("y%1").arg(marker);
-            if (store->contains(name)) scope.spectrum[channel].cursor.position[marker].setY(store->value(name).toDouble());
+            if (store->contains(name)) scope.spectrum[channel].cursor.pos[marker].setY(store->value(name).toDouble());
         }
         store->endGroup();
         store->endGroup();
@@ -117,7 +117,8 @@ void DsoSettings::load() {
     for (ChannelID channel = 0; channel < scope.voltage.size(); ++channel) {
         store->beginGroup(QString("vertical%1").arg(channel));
         if (store->contains("gainStepIndex")) scope.voltage[channel].gainStepIndex = store->value("gainStepIndex").toUInt();
-        if (store->contains("couplingOrMathIndex")) scope.voltage[channel].couplingOrMathIndex = store->value("couplingIndex").toUInt();
+        if (store->contains("couplingOrMathIndex")) scope.voltage[channel].couplingOrMathIndex =
+                store->value("couplingOrMathIndex").toUInt();
         if (store->contains("inverted")) scope.voltage[channel].inverted = store->value("inverted").toBool();
         if (store->contains("offset")) scope.voltage[channel].offset = store->value("offset").toDouble();
         if (store->contains("trigger")) scope.voltage[channel].trigger = store->value("trigger").toDouble();
@@ -128,9 +129,9 @@ void DsoSettings::load() {
         for (int marker = 0; marker < MARKER_COUNT; ++marker) {
             QString name;
             name = QString("x%1").arg(marker);
-            if (store->contains(name)) scope.voltage[channel].cursor.position[marker].setX(store->value(name).toDouble());
+            if (store->contains(name)) scope.voltage[channel].cursor.pos[marker].setX(store->value(name).toDouble());
             name = QString("y%1").arg(marker);
-            if (store->contains(name)) scope.voltage[channel].cursor.position[marker].setY(store->value(name).toDouble());
+            if (store->contains(name)) scope.voltage[channel].cursor.pos[marker].setY(store->value(name).toDouble());
         }
         store->endGroup();
         store->endGroup();
@@ -231,9 +232,9 @@ void DsoSettings::save() {
         for (int marker = 0; marker < MARKER_COUNT; ++marker) {
             QString name;
             name = QString("x%1").arg(marker);
-            store->setValue(name, scope.spectrum[channel].cursor.position[marker].x());
+            store->setValue(name, scope.spectrum[channel].cursor.pos[marker].x());
             name = QString("y%1").arg(marker);
-            store->setValue(name, scope.spectrum[channel].cursor.position[marker].y());
+            store->setValue(name, scope.spectrum[channel].cursor.pos[marker].y());
         }
         store->endGroup();
         store->endGroup();
@@ -252,9 +253,9 @@ void DsoSettings::save() {
         for (int marker = 0; marker < MARKER_COUNT; ++marker) {
             QString name;
             name = QString("x%1").arg(marker);
-            store->setValue(name, scope.voltage[channel].cursor.position[marker].x());
+            store->setValue(name, scope.voltage[channel].cursor.pos[marker].x());
             name = QString("y%1").arg(marker);
-            store->setValue(name, scope.voltage[channel].cursor.position[marker].y());
+            store->setValue(name, scope.voltage[channel].cursor.pos[marker].y());
         }
         store->endGroup();
         store->endGroup();
