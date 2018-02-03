@@ -182,6 +182,8 @@ void DsoSettings::load() {
         view.interpolation = (Dso::InterpolationMode)store->value("interpolation").toInt();
     if (store->contains("screenColorImages")) view.screenColorImages = store->value("screenColorImages").toBool();
     if (store->contains("zoom")) view.zoom = (Dso::InterpolationMode)store->value("zoom").toBool();
+    if (store->contains("cursorGridPosition"))
+        view.cursorGridPosition = (Qt::ToolBarArea)store->value("cursorGridPosition").toUInt();
     store->endGroup();
 
     store->beginGroup("window");
@@ -301,6 +303,7 @@ void DsoSettings::save() {
     store->setValue("interpolation", view.interpolation);
     store->setValue("screenColorImages", view.screenColorImages);
     store->setValue("zoom", view.zoom);
+    store->setValue("cursorGridPosition", view.cursorGridPosition);
     store->endGroup();
 
     store->beginGroup("window");

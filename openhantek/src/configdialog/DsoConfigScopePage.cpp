@@ -6,6 +6,8 @@ DsoConfigScopePage::DsoConfigScopePage(DsoSettings *settings, QWidget *parent) :
     // Initialize lists for comboboxes
     QStringList interpolationStrings;
     interpolationStrings << tr("Off") << tr("Linear");
+    QStringList cursorGridPositionStrings;
+    cursorGridPositionStrings << tr("Hidden") << tr("Left") << tr("Right");
 
     // Initialize elements
     interpolationLabel = new QLabel(tr("Interpolation"));
@@ -27,8 +29,21 @@ DsoConfigScopePage::DsoConfigScopePage(DsoSettings *settings, QWidget *parent) :
     graphGroup = new QGroupBox(tr("Graph"));
     graphGroup->setLayout(graphLayout);
 
+    cursorsLabel = new QLabel(tr("Position"));
+    cursorsComboBox = new QComboBox();
+    cursorsComboBox->addItems(cursorGridPositionStrings);
+    cursorsComboBox->setCurrentIndex(settings->view.cursorGridPosition);
+
+    cursorsLayout = new QGridLayout();
+    cursorsLayout->addWidget(cursorsLabel, 0, 0);
+    cursorsLayout->addWidget(cursorsComboBox, 0, 1);
+
+    cursorsGroup = new QGroupBox(tr("Cursors"));
+    cursorsGroup->setLayout(cursorsLayout);
+
     mainLayout = new QVBoxLayout();
     mainLayout->addWidget(graphGroup);
+    mainLayout->addWidget(cursorsGroup);
     mainLayout->addStretch(1);
 
     setLayout(mainLayout);
@@ -38,4 +53,5 @@ DsoConfigScopePage::DsoConfigScopePage(DsoSettings *settings, QWidget *parent) :
 void DsoConfigScopePage::saveSettings() {
     settings->view.interpolation = (Dso::InterpolationMode)interpolationComboBox->currentIndex();
     settings->view.digitalPhosphorDepth = digitalPhosphorDepthSpinBox->value();
+    settings->view.cursorGridPosition = (Qt::ToolBarArea)cursorsComboBox->currentIndex();
 }

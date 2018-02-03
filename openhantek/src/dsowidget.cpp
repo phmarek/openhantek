@@ -275,43 +275,43 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
 
     // The layout for the widgets
     mainLayout = new QGridLayout();
-    mainLayout->setColumnStretch(2, 1); // Scopes increase their size
+    mainLayout->setColumnStretch(3, 1); // Scopes increase their size
     // Bars around the scope, needed because the slider-drawing-area is outside
     // the scope at min/max
-    mainLayout->setColumnMinimumWidth(1, mainSliders.triggerPositionSlider->preMargin());
-    mainLayout->setColumnMinimumWidth(3, mainSliders.triggerPositionSlider->postMargin());
+    mainLayout->setColumnMinimumWidth(2, mainSliders.triggerPositionSlider->preMargin());
+    mainLayout->setColumnMinimumWidth(4, mainSliders.triggerPositionSlider->postMargin());
     mainLayout->setSpacing(0);
     int row = 0;
-    mainLayout->addLayout(settingsLayout, row++, 0, 1, 5);
+    mainLayout->addLayout(settingsLayout, row++, 1, 1, 5);
     // 5x5 box for mainScope & mainSliders
     mainLayout->setRowMinimumHeight(row + 1, mainSliders.offsetSlider->preMargin());
     mainLayout->setRowMinimumHeight(row + 3, mainSliders.offsetSlider->postMargin());
     mainLayout->setRowStretch(row + 2, 1);
-    mainLayout->addWidget(mainScope, row + 2, 2);
-    mainLayout->addWidget(mainSliders.offsetSlider, row + 1, 0, 3, 2, Qt::AlignRight);
-    mainLayout->addWidget(mainSliders.triggerPositionSlider, row, 1, 2, 3, Qt::AlignBottom);
-    mainLayout->addWidget(mainSliders.triggerLevelSlider, row + 1, 3, 3, 2, Qt::AlignLeft);
-    mainLayout->addWidget(mainSliders.markerSlider, row + 3, 1, 2, 3, Qt::AlignTop);
+    mainLayout->addWidget(mainScope, row + 2, 3);
+    mainLayout->addWidget(mainSliders.offsetSlider, row + 1, 1, 3, 2, Qt::AlignRight);
+    mainLayout->addWidget(mainSliders.triggerPositionSlider, row, 2, 2, 3, Qt::AlignBottom);
+    mainLayout->addWidget(mainSliders.triggerLevelSlider, row + 1, 4, 3, 2, Qt::AlignLeft);
+    mainLayout->addWidget(mainSliders.markerSlider, row + 3, 2, 2, 3, Qt::AlignTop);
     row += 5;
     // Separators and markerLayout
-    mainLayout->setRowMinimumHeight(row++, 4);
-    mainLayout->addLayout(markerLayout, row++, 0, 1, 5);
+    mainLayout->setRowMinimumHeight(row++, 5);
+    mainLayout->addLayout(markerLayout, row++, 1, 1, 5);
     mainLayout->setRowMinimumHeight(row++, 4);
     // 5x5 box for zoomScope & zoomSliders
     zoomScopeRow = row + 2;
-    mainLayout->addWidget(zoomScope, zoomScopeRow, 2);
-    mainLayout->addWidget(zoomSliders.offsetSlider, row + 1, 0, 3, 2, Qt::AlignRight);
-    mainLayout->addWidget(zoomSliders.triggerPositionSlider, row, 1, 2, 3, Qt::AlignBottom);
-    mainLayout->addWidget(zoomSliders.triggerLevelSlider, row + 1, 3, 3, 2, Qt::AlignLeft);
+    mainLayout->addWidget(zoomScope, zoomScopeRow, 3);
+    mainLayout->addWidget(zoomSliders.offsetSlider, row + 1, 1, 3, 2, Qt::AlignRight);
+    mainLayout->addWidget(zoomSliders.triggerPositionSlider, row, 2, 2, 3, Qt::AlignBottom);
+    mainLayout->addWidget(zoomSliders.triggerLevelSlider, row + 1, 4, 3, 2, Qt::AlignLeft);
     row += 5;
     // Separator and embedded measurementLayout
     mainLayout->setRowMinimumHeight(row++, 8);
-    mainLayout->addLayout(measurementLayout, row++, 0, 1, 5);
+    mainLayout->addLayout(measurementLayout, row++, 1, 1, 5);
 
-    QGroupBox *cursorsGroupBox = new QGroupBox();
+    cursorsGroupBox = new QGroupBox();
     cursorsGroupBox->setLayout(cursorsLayout);
     cursorsGroupBox->setFixedWidth(180);
-    mainLayout->addWidget(cursorsGroupBox, 0, 5, row, 1);
+    setupCursorsGrid();
 
     // The widget itself
     setPalette(palette);
@@ -338,6 +338,28 @@ DsoWidget::DsoWidget(DsoSettingsScope *scope, DsoSettingsView *view, const Dso::
         mainScope->markerUpdated();
     });
     zoomSliders.markerSlider->setEnabled(false);
+}
+
+void DsoWidget::setupCursorsGrid() {
+    switch (view->cursorGridPosition) {
+    case Qt::LeftToolBarArea:
+        if (mainLayout->itemAtPosition(0, 0) == nullptr) {
+            cursorsGroupBox->setParent(nullptr);
+            mainLayout->addWidget(cursorsGroupBox, 0, 0, mainLayout->rowCount(), 1);
+        }
+        break;
+    case Qt::RightToolBarArea:
+        if (mainLayout->itemAtPosition(0, 6) == nullptr) {
+            cursorsGroupBox->setParent(nullptr);
+            mainLayout->addWidget(cursorsGroupBox, 0, 6, mainLayout->rowCount(), 1);
+        }
+        break;
+    default:
+        if (cursorsGroupBox->parent() != nullptr) {
+            cursorsGroupBox->setParent(nullptr);
+        }
+        break;
+    }
 }
 
 void DsoWidget::setupSliders(DsoWidget::Sliders &sliders) {
@@ -691,6 +713,7 @@ void DsoWidget::updateZoom(bool enabled) {
 
 /// \brief Prints analyzed data.
 void DsoWidget::showNew(std::shared_ptr<PPresult> data) {
+    setupCursorsGrid();
     mainScope->showData(data);
     zoomScope->showData(data);
 

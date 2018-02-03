@@ -42,6 +42,7 @@ struct DsoSettingsView {
     Dso::InterpolationMode interpolation = Dso::INTERPOLATION_LINEAR; ///< Interpolation mode for the graph
     bool screenColorImages = false;                                   ///< true exports images with screen colors
     bool zoom = false;                                                ///< true if the magnified scope is enabled
+    Qt::ToolBarArea cursorGridPosition = Qt::LeftToolBarArea;
 
     unsigned digitalPhosphorDraws() const {
         return digitalPhosphor ? digitalPhosphorDepth : 1;

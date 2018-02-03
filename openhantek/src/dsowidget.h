@@ -17,6 +17,7 @@ struct DsoSettingsScope;
 struct DsoSettingsView;
 
 class QPushButton;
+class QGroupBox;
 
 /// \brief The widget for the oszilloscope-screen
 /// This widget contains the scopes and all level sliders.
@@ -56,6 +57,7 @@ class DsoWidget : public QWidget {
   protected:
     virtual void showEvent(QShowEvent *event);
     void setupSliders(Sliders &sliders);
+    void setupCursorsGrid();
     void adaptTriggerLevelSlider(DsoWidget::Sliders &sliders, ChannelID channel);
     void adaptTriggerPositionSlider();
     void setMeasurementVisible(ChannelID channel);
@@ -96,6 +98,7 @@ class DsoWidget : public QWidget {
     std::vector<QLabel *> measurementAmplitudeLabel; ///< Amplitude of the signal (V)
     std::vector<QLabel *> measurementFrequencyLabel; ///< Frequency of the signal (Hz)
 
+    QGroupBox *cursorsGroupBox;
     QGridLayout *cursorsLayout;                 ///< The table for the cursor parameters
     CursorInfo markerInfo;                      ///< The cursor info for horizontal axis markers
     std::vector<CursorInfo> voltageCursors;     ///< The cursor info for voltage channels
